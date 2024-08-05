@@ -3,6 +3,7 @@
 require 'readline'
 require 'json'
 require 'date'
+require 'csv'
 
 # Class representing a single todo list
 class List
@@ -34,7 +35,7 @@ class Entry
 end
 
 class Please
-  VALID_COMMANDS = %w[me add delete wife show print move save quit exit drink boards set].map(&:downcase)
+  VALID_COMMANDS = %w[me add delete wife show print move save quit exit drink boards set create use].map(&:downcase)
   ADD_SUBCOMMANDS = %w[daily weekly monthly redo].map(&:downcase)
 
   def initialize
@@ -81,15 +82,7 @@ class Please
 
     case command
     when 'add'
-      subcommand_input = args.shift
-      subcommand = find_command(subcommand_input.downcase, ADD_SUBCOMMANDS)
-      subcommands << subcommand unless subcommand.nil?
-
-      name = args.find { |arg| arg.include?("name=") }
-      text = args.find { |arg| !arg.include?("name=") }
-
-      parameters['name'] = name.split("=")[1] if name
-      parameters['text'] = text unless text.nil?
+      parameters['name'] = args.join('') if args.size == 1
     when 'move'
       id = args.shift
       parameters['id'] = id.to_i
@@ -98,6 +91,11 @@ class Please
         parameters[key.downcase] = value
       end
     when 'set'
+      args.each do |arg|
+        key, value = arg.split("=")
+        parameters[key.downcase] = value
+      end
+    when 'create'
       args.each do |arg|
         key, value = arg.split("=")
         parameters[key.downcase] = value
@@ -142,38 +140,51 @@ class Please
 
   def start_interactive
     while input = Readline.readline('please> ', true)
-      args = input.split
+      args = CSV::parse_line(input, col_sep: ' ')
       parse_arguments(args)
     end
   end
 
   private
 
+  def get_list_by_id(id)
+    @lists.values.find { |list| list.id == id }
+  end
+
   def do_me(cmd)
     puts "Executing 'me' with #{cmd}"
   end
 
   def do_add(cmd)
+    puts "Executing 'add' with #{cmd}"
     subcommand = cmd[:subcommands].first
     name = cmd[:parameters]['name'] || "Unnamed"
     text = cmd[:parameters]['text'] || "No text provided"
     times = cmd[:parameters]['times'] || 1
 
+    which_board = get_list_by_id(@default_board_id).name
+    puts "Adding entry to list: #{which_board}"
     case subcommand
     when 'redo'
       times.to_i.times do
         entry = Entry.new(name, text)
-        @lists["default"].entries << entry
+        @lists[which_board].entries << entry
       end
     else
       entry = Entry.new(name, text)
-      @lists["default"].entries << entry
+      @lists[which_board].entries << entry
     end
-    puts "Added entry to default list"
+    puts "Added entry to current list"
   end
 
   def do_delete(cmd)
     puts "Executing 'delete' with #{cmd}"
+  end
+
+  def do_create(cmd)
+    list_name = cmd[:parameters]['name']
+    @lists[list_name] = List.new(list_name)
+    puts "Created list with name: #{list_name}"
   end
 
   def do_wife(cmd)
@@ -183,7 +194,7 @@ class Please
 
   def do_drink(cmd)
     @wife_mode = false
-    puts "Back to normal mode"
+    puts "Thank you"
   end
 
   def do_show(cmd)
@@ -294,4 +305,3 @@ if __FILE__ == $0
     please.parse_arguments(ARGV)
   end
 end
-
